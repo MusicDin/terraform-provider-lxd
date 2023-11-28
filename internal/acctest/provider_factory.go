@@ -26,7 +26,7 @@ func testProvider() *provider_config.LxdProviderConfig {
 
 	if testProviderConfig == nil {
 		config := lxd_config.DefaultConfig()
-		refreshInterval := time.Duration(2 * time.Second)
+		refreshInterval := time.Duration(0 * time.Second)
 		acceptClientCert := true
 		testProviderConfig = provider_config.NewLxdProvider(config, refreshInterval, acceptClientCert)
 	}
@@ -39,5 +39,5 @@ func testProvider() *provider_config.LxdProviderConfig {
 // CLI command executed to create a provider server to which the CLI can
 // reattach.
 var ProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
-	"lxd": providerserver.NewProtocol6WithError(provider.NewLxdProvider("test", "5s")()),
+	"lxd": providerserver.NewProtocol6WithError(provider.NewLxdProvider("test", "0s")()),
 }
