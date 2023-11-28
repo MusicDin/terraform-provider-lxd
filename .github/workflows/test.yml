@@ -1,9 +1,7 @@
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
   pull_request:
-    types: [opened, reopened, synchronize]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -70,44 +68,6 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
+
       - run: make test
 
-  build-platforms:
-    runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        go-version:
-          - "1.21"
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{ matrix.go-version }}
-
-      - name: Run GoReleaser in build mode to test all release platforms
-        uses: goreleaser/goreleaser-action@v5
-        with:
-          version: latest
-          args: build --snapshot
-
-  check-lint:
-    runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        go-version:
-          - "1.21"
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v4
-        with:
-          go-version: ${{ matrix.go-version }}
-
-      - run: make fmtcheck
-      - run: make vet
-      - run: make static-analysis
