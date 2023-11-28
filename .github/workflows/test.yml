@@ -21,12 +21,12 @@ jobs:
           - "1.20"
           - "1.21"
         channel:
-          - 5.0/stable
           - latest/stable
           - latest/candidate
 
     env:
       TF_ACC: "1"
+      TF_LOG: debug
       GO111MODULE: "on"
       LXD_REMOTE: local
       LXD_ADDR: localhost
