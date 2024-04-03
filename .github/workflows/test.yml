@@ -65,6 +65,15 @@ jobs:
             sudo snap restart --reload lxd
           fi
 
+          lxc ls
+          lxc remote ls
+          lxc remote add images https://images.lxd.canonical.com --protocol simplestreams || true
+          lxc remote ls
+
+      - name: Configure LXD image remote
+        run: |
+          lxc remote add images https://images.lxd.canonical.com --protocol simplestreams || true
+
       - name: Configure OVN
         run: |
           sudo apt-get update
