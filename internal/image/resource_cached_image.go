@@ -8,13 +8,16 @@ import (
 	"github.com/canonical/lxd/shared/api"
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -30,9 +33,11 @@ import (
 type CachedImageModel struct {
 	SourceImage  types.String `tfsdk:"source_image"`
 	SourceRemote types.String `tfsdk:"source_remote"`
+	Type         types.String `tfsdk:"type"`
 	Aliases      types.Set    `tfsdk:"aliases"`
 	CopyAliases  types.Bool   `tfsdk:"copy_aliases"`
-	Type         types.String `tfsdk:"type"`
+	AutoUpdate   types.Bool   `tfsdk:"auto_update"`
+	Public       types.Bool   `tfsdk:"public"`
 	Project      types.String `tfsdk:"project"`
 	Remote       types.String `tfsdk:"remote"`
 
@@ -74,25 +79,6 @@ func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				},
 			},
 
-			"aliases": schema.SetAttribute{
-				Optional:    true,
-				ElementType: types.StringType,
-				Validators: []validator.Set{
-					// Prevent empty values.
-					setvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)),
-				},
-				PlanModifiers: []planmodifier.Set{
-					setplanmodifier.RequiresReplace(),
-				},
-			},
-
-			"copy_aliases": schema.BoolAttribute{
-				Optional: true,
-				PlanModifiers: []planmodifier.Bool{
-					boolplanmodifier.RequiresReplace(),
-				},
-			},
-
 			"type": schema.StringAttribute{
 				Optional: true,
 				Computed: true,
@@ -103,6 +89,38 @@ func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Validators: []validator.String{
 					stringvalidator.OneOf("container", "virtual-machine"),
 				},
+			},
+
+			"aliases": schema.SetAttribute{
+				Optional:    true,
+				Computed:    true,
+				ElementType: types.StringType,
+				Default:     setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
+				Validators: []validator.Set{
+					// Prevent empty values.
+					setvalidator.ValueStringsAre(stringvalidator.LengthAtLeast(1)),
+				},
+			},
+
+			"copy_aliases": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(true),
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.RequiresReplace(),
+				},
+			},
+
+			"auto_update": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
+			},
+
+			"public": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
 			},
 
 			"project": schema.StringAttribute{
@@ -235,8 +253,9 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 
 	// Copy image.
 	args := lxd.ImageCopyArgs{
-		Aliases: imageAliases,
-		Public:  false,
+		Aliases:    imageAliases,
+		AutoUpdate: plan.AutoUpdate.ValueBool(),
+		Public:     plan.Public.ValueBool(),
 	}
 
 	opCopy, err := server.CopyImage(imageServer, *imageInfo, &args)
@@ -319,6 +338,28 @@ func (r CachedImageResource) Update(ctx context.Context, req resource.UpdateRequ
 	// Extract image metadata (fingerprint is retained from previous state).
 	image := plan.SourceImage.ValueString()
 	imageFingerprint := state.Fingerprint.ValueString()
+
+	// Get data about remote image (also checks if image exists).
+	imageInfo, etag, err := server.GetImage(imageFingerprint)
+	if err != nil {
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve cached image %q", image), err.Error())
+		return
+	}
+
+	// Update cached image info.
+	newImage := api.ImagePut{
+		AutoUpdate: plan.AutoUpdate.ValueBool(),
+		Public:     plan.Public.ValueBool(),
+		Properties: imageInfo.Properties,
+		ExpiresAt:  imageInfo.ExpiresAt,
+		Profiles:   imageInfo.Profiles,
+	}
+
+	err = server.UpdateImage(imageFingerprint, newImage, etag)
+	if err != nil {
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to update cached image %q", image), err.Error())
+		return
+	}
 
 	// Extract removed and added image aliases.
 	oldAliases := make([]string, 0, len(plan.Aliases.Elements()))
@@ -433,6 +474,8 @@ func (r CachedImageResource) SyncState(ctx context.Context, tfState *tfsdk.State
 
 	m.Fingerprint = types.StringValue(image.Fingerprint)
 	m.Architecture = types.StringValue(image.Architecture)
+	m.AutoUpdate = types.BoolValue(image.AutoUpdate)
+	m.Public = types.BoolValue(image.Public)
 	m.CreatedAt = types.Int64Value(image.CreatedAt.Unix())
 	m.Aliases = aliasSet
 
@@ -456,5 +499,10 @@ func ToAliasList(ctx context.Context, aliasSet types.Set) ([]string, diag.Diagno
 
 // ToAliasSetType converts slice of strings into aliases of type types.Set.
 func ToAliasSetType(ctx context.Context, aliases []string) (types.Set, diag.Diagnostics) {
+	if len(aliases) == 0 {
+		// Prevent null value if slice is empty.
+		return types.SetValueMust(types.StringType, []attr.Value{}), nil
+	}
+
 	return types.SetValueFrom(ctx, types.StringType, aliases)
 }
