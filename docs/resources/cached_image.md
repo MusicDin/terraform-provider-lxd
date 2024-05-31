@@ -24,11 +24,18 @@ resource "lxd_instance" "test1" {
 * `source_remote` - **Required** - Name of the LXD remote from where image will
 	be pulled.
 
+* `description` - *Optional* - Description of the cached image.
+
 * `type` - *Optional* - Type of image to cache. Must be one of `container` or
   `virtual-machine`. Defaults to `container`.
 
 * `aliases` - *Optional* - A list of aliases to assign to the image after
 	pulling.
+
+* `auto_update` - *Optional* - Whether the LXD should automatically refresh the image. Defaults
+  to `false`.
+
+* `public` - *Optional* - Whether the image is public. Defaults to `false`.
 
 * `copy_aliases` - *Optional* - Whether to copy the aliases of the image from
 	the remote. Valid values are `true` and `false`. Defaults to `true`.
