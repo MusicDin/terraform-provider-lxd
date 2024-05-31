@@ -148,6 +148,9 @@ func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"copied_aliases": schema.SetAttribute{
 				Computed:    true,
 				ElementType: types.StringType,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -318,11 +321,11 @@ func (r CachedImageResource) Update(ctx context.Context, req resource.UpdateRequ
 	imageFingerprint := state.Fingerprint.ValueString()
 
 	// Extract removed and added image aliases.
-	oldAliases, diags := ToAliasList(ctx, plan.Aliases)
+	oldAliases := make([]string, 0, len(plan.Aliases.Elements()))
+	diags := req.State.GetAttribute(ctx, path.Root("aliases"), &oldAliases)
 	resp.Diagnostics.Append(diags...)
 
-	newAliases := make([]string, 0, len(plan.Aliases.Elements()))
-	diags = req.State.GetAttribute(ctx, path.Root("aliases"), &newAliases)
+	newAliases, diags := ToAliasList(ctx, plan.Aliases)
 	resp.Diagnostics.Append(diags...)
 
 	if resp.Diagnostics.HasError() {
@@ -416,8 +419,8 @@ func (r CachedImageResource) SyncState(ctx context.Context, tfState *tfsdk.State
 	copiedAliases, diags := ToAliasList(ctx, m.CopiedAliases)
 	respDiags.Append(diags...)
 
-	// Copy aliases from image state that are present in user defined
-	// config or are not copied.
+	// Extract aliases from image that are either present in user defined
+	// config or are not copied from initial remote image.
 	var aliases []string
 	for _, a := range image.Aliases {
 		if utils.ValueInSlice(a.Name, configAliases) || !utils.ValueInSlice(a.Name, copiedAliases) {
