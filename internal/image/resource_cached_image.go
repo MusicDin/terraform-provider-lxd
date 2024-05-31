@@ -31,6 +31,7 @@ import (
 
 // CachedImageModel resource data model that matches the schema.
 type CachedImageModel struct {
+	Description  types.String `tfsdk:"description"`
 	SourceImage  types.String `tfsdk:"source_image"`
 	SourceRemote types.String `tfsdk:"source_remote"`
 	Type         types.String `tfsdk:"type"`
@@ -65,6 +66,11 @@ func (r CachedImageResource) Metadata(_ context.Context, req resource.MetadataRe
 func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
+			"description": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+			},
+
 			"source_image": schema.StringAttribute{
 				Required: true,
 				PlanModifiers: []planmodifier.String{
@@ -207,7 +213,7 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	image := plan.SourceImage.ValueString()
+	imageName := plan.SourceImage.ValueString()
 	imageType := plan.Type.ValueString()
 	imageRemote := plan.SourceRemote.ValueString()
 	imageServer, err := r.provider.ImageServer(imageRemote)
@@ -217,9 +223,9 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 
 	// Determine whether the user has provided an fingerprint or an alias.
-	aliasTarget, _, _ := imageServer.GetImageAliasType(imageType, image)
+	aliasTarget, _, _ := imageServer.GetImageAliasType(imageType, imageName)
 	if aliasTarget != nil {
-		image = aliasTarget.Target
+		imageName = aliasTarget.Target
 	}
 
 	aliases, diags := ToAliasList(ctx, plan.Aliases)
@@ -245,9 +251,9 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 
 	// Get data about remote image (also checks if image exists).
-	imageInfo, _, err := imageServer.GetImage(image)
+	imageInfo, _, err := imageServer.GetImage(imageName)
 	if err != nil {
-		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve info about image %q", image), err.Error())
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve info about image %q", imageName), err.Error())
 		return
 	}
 
@@ -260,14 +266,14 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 
 	opCopy, err := server.CopyImage(imageServer, *imageInfo, &args)
 	if err != nil {
-		resp.Diagnostics.AddError(fmt.Sprintf("Failed to copy image %q", image), err.Error())
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to copy image %q", imageName), err.Error())
 		return
 	}
 
 	// Wait for copy operation to finish.
 	err = opCopy.Wait()
 	if err != nil {
-		resp.Diagnostics.AddError(fmt.Sprintf("Failed to copy image %q", image), err.Error())
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to copy image %q", imageName), err.Error())
 		return
 	}
 
@@ -284,6 +290,33 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	// To update description, we need to modify image properties. Therefore, fetch
+	// the created image, modify it's properties and update it.
+	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
+		// Get data about remote image (also checks if image exists).
+		image, etag, err := server.GetImage(imageInfo.Fingerprint)
+		if err != nil {
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve cached image %q", imageName), err.Error())
+			return
+		}
+
+		newImage := api.ImagePut{
+			AutoUpdate: image.AutoUpdate,
+			Public:     image.Public,
+			Properties: image.Properties,
+			ExpiresAt:  image.ExpiresAt,
+			Profiles:   image.Profiles,
+		}
+
+		newImage.Properties["description"] = plan.Description.ValueString()
+
+		err = server.UpdateImage(image.Fingerprint, newImage, etag)
+		if err != nil {
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to update cached image %q", imageName), err.Error())
+			return
+		}
 	}
 
 	plan.Fingerprint = types.StringValue(imageInfo.Fingerprint)
@@ -335,14 +368,14 @@ func (r CachedImageResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	// Extract image metadata (fingerprint is retained from previous state).
-	image := plan.SourceImage.ValueString()
+	// Extract imageName metadata (fingerprint is retained from previous state).
+	imageName := plan.SourceImage.ValueString()
 	imageFingerprint := state.Fingerprint.ValueString()
 
 	// Get data about remote image (also checks if image exists).
 	imageInfo, etag, err := server.GetImage(imageFingerprint)
 	if err != nil {
-		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve cached image %q", image), err.Error())
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve cached image %q", imageName), err.Error())
 		return
 	}
 
@@ -355,9 +388,13 @@ func (r CachedImageResource) Update(ctx context.Context, req resource.UpdateRequ
 		Profiles:   imageInfo.Profiles,
 	}
 
+	if !plan.Description.IsNull() && !plan.Description.IsUnknown() {
+		newImage.Properties["description"] = plan.Description.ValueString()
+	}
+
 	err = server.UpdateImage(imageFingerprint, newImage, etag)
 	if err != nil {
-		resp.Diagnostics.AddError(fmt.Sprintf("Failed to update cached image %q", image), err.Error())
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to update cached image %q", imageName), err.Error())
 		return
 	}
 
@@ -379,7 +416,7 @@ func (r CachedImageResource) Update(ctx context.Context, req resource.UpdateRequ
 	for _, alias := range removed {
 		err := server.DeleteImageAlias(alias)
 		if err != nil {
-			resp.Diagnostics.AddError(fmt.Sprintf("Failed to delete alias %q for cached image %q", alias, image), err.Error())
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to delete alias %q for cached image %q", alias, imageName), err.Error())
 			return
 		}
 	}
@@ -392,7 +429,7 @@ func (r CachedImageResource) Update(ctx context.Context, req resource.UpdateRequ
 
 		err := server.CreateImageAlias(req)
 		if err != nil {
-			resp.Diagnostics.AddError(fmt.Sprintf("Failed to create alias %q for cached image %q", alias, image), err.Error())
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to create alias %q for cached image %q", alias, imageName), err.Error())
 			return
 		}
 	}
@@ -474,6 +511,7 @@ func (r CachedImageResource) SyncState(ctx context.Context, tfState *tfsdk.State
 
 	m.Fingerprint = types.StringValue(image.Fingerprint)
 	m.Architecture = types.StringValue(image.Architecture)
+	m.Description = types.StringValue(image.Properties["description"])
 	m.AutoUpdate = types.BoolValue(image.AutoUpdate)
 	m.Public = types.BoolValue(image.Public)
 	m.CreatedAt = types.Int64Value(image.CreatedAt.Unix())
