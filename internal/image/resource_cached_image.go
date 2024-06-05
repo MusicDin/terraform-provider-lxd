@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	lxd "github.com/canonical/lxd/client"
 	"github.com/canonical/lxd/shared/api"
@@ -32,11 +33,14 @@ import (
 
 // CachedImageModel resource data model that matches the schema.
 type CachedImageModel struct {
+	Description  types.String `tfsdk:"description"`
 	SourceImage  types.String `tfsdk:"source_image"`
 	SourceRemote types.String `tfsdk:"source_remote"`
+	Type         types.String `tfsdk:"type"`
 	Aliases      types.Set    `tfsdk:"aliases"`
 	CopyAliases  types.Bool   `tfsdk:"copy_aliases"`
-	Type         types.String `tfsdk:"type"`
+	AutoUpdate   types.Bool   `tfsdk:"auto_update"`
+	Public       types.Bool   `tfsdk:"public"`
 	Project      types.String `tfsdk:"project"`
 	Remote       types.String `tfsdk:"remote"`
 
@@ -45,6 +49,7 @@ type CachedImageModel struct {
 	CreatedAt     types.Int64  `tfsdk:"created_at"`
 	Fingerprint   types.String `tfsdk:"fingerprint"`
 	CopiedAliases types.Set    `tfsdk:"copied_aliases"`
+	Tracker       types.String `tfsdk:"tracker"`
 }
 
 // CachedImageResource represent LXD cached image resource.
@@ -64,6 +69,14 @@ func (r CachedImageResource) Metadata(_ context.Context, req resource.MetadataRe
 func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
+			"description": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+
 			"source_image": schema.StringAttribute{
 				Required: true,
 				PlanModifiers: []planmodifier.String{
@@ -75,6 +88,18 @@ func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Required: true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+				},
+			},
+
+			"type": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  stringdefault.StaticString("container"),
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf("container", "virtual-machine"),
 				},
 			},
 
@@ -98,16 +123,16 @@ func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				},
 			},
 
-			"type": schema.StringAttribute{
+			"auto_update": schema.BoolAttribute{
 				Optional: true,
 				Computed: true,
-				Default:  stringdefault.StaticString("container"),
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-				Validators: []validator.String{
-					stringvalidator.OneOf("container", "virtual-machine"),
-				},
+				Default:  booldefault.StaticBool(false),
+			},
+
+			"public": schema.BoolAttribute{
+				Optional: true,
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
 			},
 
 			"project": schema.StringAttribute{
@@ -155,6 +180,13 @@ func (r CachedImageResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				ElementType: types.StringType,
 				PlanModifiers: []planmodifier.Set{
 					setplanmodifier.UseStateForUnknown(),
+				},
+			},
+
+			"tracker": schema.StringAttribute{
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
 		},
@@ -225,7 +257,7 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 
 	// Get data about remote image (also checks if image exists).
-	imageInfo, _, err := imageServer.GetImage(imageName)
+	imageInfo, etag, err := imageServer.GetImage(imageName)
 	if err != nil {
 		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve info about image %q", imageName), err.Error())
 		return
@@ -242,8 +274,9 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 
 	// Copy image.
 	args := lxd.ImageCopyArgs{
-		Aliases: imageAliases,
-		Public:  false,
+		Aliases:    imageAliases,
+		AutoUpdate: plan.AutoUpdate.ValueBool(),
+		Public:     plan.Public.ValueBool(),
 	}
 
 	opCopy, err := server.CopyImage(imageServer, *imageInfo, &args)
@@ -256,6 +289,26 @@ func (r CachedImageResource) Create(ctx context.Context, req resource.CreateRequ
 	err = opCopy.Wait()
 	if err != nil {
 		resp.Diagnostics.AddError(fmt.Sprintf("Failed to copy image %q", imageName), err.Error())
+		return
+	}
+
+	// Fetch metadata of the copied image.
+	image, etag, err := server.GetImage(imageInfo.Fingerprint)
+	if err != nil {
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retireve copied image %q", imageName), err.Error())
+		return
+	}
+
+	// Update copied image.
+	newImage := image.Writable()
+
+	if !plan.Description.IsNull() {
+		newImage.Properties["description"] = plan.Description.ValueString()
+	}
+
+	err = server.UpdateImage(imageInfo.Fingerprint, newImage, etag)
+	if err != nil {
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to update image %q", imageName), err.Error())
 		return
 	}
 
@@ -328,9 +381,28 @@ func (r CachedImageResource) Update(ctx context.Context, req resource.UpdateRequ
 	imageFingerprint := state.Fingerprint.ValueString()
 
 	// Get info about cached image.
-	image, _, err := server.GetImage(imageFingerprint)
+	image, etag, err := server.GetImage(imageFingerprint)
 	if err != nil {
 		resp.Diagnostics.AddError(fmt.Sprintf("Failed to retrieve cached image %q", imageName), err.Error())
+		return
+	}
+
+	if !plan.Description.IsNull() {
+		image.Properties["description"] = plan.Description.ValueString()
+	}
+
+	// Update cached image.
+	newImage := api.ImagePut{
+		AutoUpdate: plan.AutoUpdate.ValueBool(),
+		Public:     plan.Public.ValueBool(),
+		Properties: image.Properties,
+		ExpiresAt:  image.ExpiresAt,
+		Profiles:   image.Profiles,
+	}
+
+	err = server.UpdateImage(imageFingerprint, newImage, etag)
+	if err != nil {
+		resp.Diagnostics.AddError(fmt.Sprintf("Failed to update image %q", imageName), err.Error())
 		return
 	}
 
@@ -428,12 +500,45 @@ func (r CachedImageResource) SyncState(ctx context.Context, tfState *tfsdk.State
 	image, _, err := server.GetImage(imageFingerprint)
 	if err != nil {
 		if errors.IsNotFoundError(err) {
+			image = nil
+
+			// If image is not found, it could be bacuse the image was auto updated
+			// which causes the image fingerprint to change. If an image Tracker is
+			// stored for that image, try to find an image that matches by URL and
+			// alias.
+			url, alias, ok := fromImageTracker(m.Tracker.ValueString())
+			if !ok {
+				// No valid tracker, remove image from state.
+				tfState.RemoveResource(ctx)
+				return nil
+			}
+
+			images, err := server.GetImages()
+			if err != nil {
+				respDiags.AddError("Failed to retrieve cached images", err.Error())
+				return respDiags
+			}
+
+			for _, img := range images {
+				imgSource := image.UpdateSource
+				if imgSource != nil &&
+					imgSource.Server == url &&
+					imgSource.Alias == alias &&
+					imgSource.Protocol == "simplestreams" {
+					// Image matches all cached image information.
+					image = &img
+				}
+			}
+
+			// Image not found.
 			tfState.RemoveResource(ctx)
 			return nil
 		}
 
-		respDiags.AddError(fmt.Sprintf("Failed to retrieve cached image %q", imageName), err.Error())
-		return respDiags
+		if image == nil {
+			respDiags.AddError(fmt.Sprintf("Failed to retrieve cached image %q", imageName), err.Error())
+			return respDiags
+		}
 	}
 
 	configAliases, diags := ToAliasList(ctx, m.Aliases)
@@ -454,9 +559,13 @@ func (r CachedImageResource) SyncState(ctx context.Context, tfState *tfsdk.State
 	aliasSet, diags := ToAliasSetType(ctx, aliases)
 	respDiags.Append(diags...)
 
+	m.Description = types.StringValue(image.Properties["description"])
 	m.Fingerprint = types.StringValue(image.Fingerprint)
 	m.Architecture = types.StringValue(image.Architecture)
+	m.AutoUpdate = types.BoolValue(image.AutoUpdate)
+	m.Public = types.BoolValue(image.Public)
 	m.CreatedAt = types.Int64Value(image.CreatedAt.Unix())
+	m.Tracker = types.StringValue(toImageTracker(image.UpdateSource))
 	m.Aliases = aliasSet
 
 	if respDiags.HasError() {
@@ -485,4 +594,30 @@ func ToAliasSetType(ctx context.Context, aliases []string) (types.Set, diag.Diag
 	}
 
 	return types.SetValueFrom(ctx, types.StringType, aliases)
+}
+
+// toImageTracker converts image source server and alias into a tracker.
+func toImageTracker(source *api.ImageSource) string {
+	if source == nil || source.Server == "" || source.Alias == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("%s|%s", source.Server, source.Alias)
+}
+
+// toImageTracker converts the tracker into image server and alias.
+func fromImageTracker(tracker string) (server string, alias string, ok bool) {
+	parts := strings.SplitN(tracker, "|", 2)
+	if len(parts) < 2 {
+		return "", "", false
+	}
+
+	server = parts[0]
+	alias = parts[1]
+
+	if server == "" || alias == "" {
+		return "", "", false
+	}
+
+	return server, alias, true
 }
