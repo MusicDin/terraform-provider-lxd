@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canonical/lxd/shared/api"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/terraform-lxd/terraform-provider-lxd/internal/utils"
@@ -37,7 +38,7 @@ func PreCheckLxdVersion(t *testing.T, versionConstraint string) {
 	serverVersion := apiServer.Environment.ServerVersion
 	ok, err := utils.CheckVersion(serverVersion, versionConstraint)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to check LXD server version: %v", err)
 	}
 
 	if !ok {
@@ -108,6 +109,77 @@ func PreCheckRoot(t *testing.T) {
 	if err != nil {
 		t.Skipf("Test %q skipped. Cannot escalate privilege without a password.", t.Name())
 	}
+}
+
+// PreCheckServerExposed skips the test if the server is not exposed on the localhost
+// over port 8443. This is required for remote provider tests.
+func PreCheckLocalServerHTTPS(t *testing.T) {
+	nc, err := exec.LookPath("nc")
+	if err != nil {
+		t.Skip(`Skipping remote provider test. Command "netcat" not found`)
+	}
+
+	err = exec.Command(nc, "-z", "127.0.0.1", "8443").Run()
+	if err != nil {
+		t.Skip(`Skipping remote provider test. LXD is not available on "https://127.0.0.1:8443"`)
+	}
+}
+
+// ConfigureTrustPassword sets and returns the trust password. If the server
+// does not support trust password, the test is skipped.
+func ConfigureTrustPassword(t *testing.T) string {
+	password := "test-pass"
+
+	// Only servers with LXD version < 6.0.0 support trust password.
+	PreCheckLxdVersion(t, "< 6.0.0")
+
+	server, err := testProvider().InstanceServer("", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	apiServer, etag, err := server.GetServer()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	apiServer.Config["core.trust_password"] = password
+
+	err = server.UpdateServer(apiServer.Writable(), etag)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return password
+}
+
+// ConfigureTrustToken ensures the trust token is set to "test-pass". If the server
+// does not support trust password, the test is skipped.
+func ConfigureTrustToken(t *testing.T) string {
+	server, err := testProvider().InstanceServer("", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create new token.
+	tokenPost := api.CertificatesPost{
+		Name:  "tf-test-token",
+		Type:  "client",
+		Token: true,
+	}
+
+	op, err := server.CreateCertificateToken(tokenPost)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opAPI := op.Get()
+	token, err := opAPI.ToCertificateAddToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return token.String()
 }
 
 // PrintResourceState is a test check function that prints the entire state
