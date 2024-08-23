@@ -61,7 +61,7 @@ jobs:
           fi
 
           # Add HTTPS remote.
-          lxc remote add localhost https://localhost:8443 --accept-certificate
+          lxc remote add localhost --accept-certificate --token $(lxc config trust add --name lxd-terraform-provider --quiet)
 
       - name: Configure OVN
         run: |
