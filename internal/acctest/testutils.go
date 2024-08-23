@@ -3,6 +3,7 @@ package acctest
 import (
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"strings"
 
 	petname "github.com/dustinkirkland/golang-petname"
@@ -37,4 +38,15 @@ func QuoteStrings(slice []string) string {
 		quoted[i] = fmt.Sprintf("%q", s)
 	}
 	return strings.Join(quoted, ", ")
+}
+
+// ResetLXDEnvVars unsets all environment variables that are supported by
+// the provider.
+func ResetLXDEnvVars() {
+	os.Unsetenv("LXD_REMOTE")
+	os.Unsetenv("LXD_SCHEME")
+	os.Unsetenv("LXD_ADDR")
+	os.Unsetenv("LXD_PORT")
+	os.Unsetenv("LXD_PASSWORD")
+	os.Unsetenv("LXD_TOKEN")
 }
