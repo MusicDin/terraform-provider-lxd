@@ -103,8 +103,9 @@ func (p *LxdProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 						},
 
 						"port": schema.StringAttribute{
-							Optional:    true,
-							Description: "Port LXD Daemon API is listening on. (default = 8443)",
+							Optional:           true,
+							Description:        "Port LXD Daemon API is listening on. (default = 8443)",
+							DeprecationMessage: "Attribute `port` is deprecated and will be removed in a future release. Set attribute `address` to the fully qualified LXD address instead.",
 						},
 
 						"scheme": schema.StringAttribute{
@@ -113,6 +114,7 @@ func (p *LxdProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *
 							Validators: []validator.String{
 								stringvalidator.OneOf("unix", "https"),
 							},
+							DeprecationMessage: "Attribute `scheme` is deprecated and will be removed in a future release. Set attribute `address` to the fully qualified LXD address instead.",
 						},
 
 						"password": schema.StringAttribute{
