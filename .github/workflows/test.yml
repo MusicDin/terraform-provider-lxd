@@ -33,10 +33,6 @@ jobs:
     env:
       TF_ACC: "1"
       GO111MODULE: "on"
-      LXD_REMOTE: localhost
-      LXD_SCHEME: https
-      LXD_ADDR: localhost
-      LXD_PORT: 8443
       LXD_GENERATE_CLIENT_CERTS: "true"
       LXD_ACCEPT_SERVER_CERTIFICATE: "true"
 
@@ -64,8 +60,8 @@ jobs:
             sudo snap restart --reload lxd
           fi
 
-          # Generate trust token.
-          echo "LXD_TOKEN=$(lxc config trust add --name lxd-terraform-provider --quiet)" >> $GITHUB_ENV
+          # Add HTTPS remote.
+          lxc remote add localhost https://localhost:8443 --accept-certificate
 
       - name: Configure OVN
         run: |
