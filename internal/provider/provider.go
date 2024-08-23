@@ -229,7 +229,7 @@ func (p *LxdProvider) Configure(ctx context.Context, req provider.ConfigureReque
 }
 
 func (p *LxdProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{
+	resources := []func() resource.Resource{
 		image.NewCachedImageResource,
 		image.NewPublishImageResource,
 		instance.NewInstanceResource,
@@ -249,6 +249,13 @@ func (p *LxdProvider) Resources(_ context.Context) []func() resource.Resource {
 		storage.NewStorageVolumeCopyResource,
 		truststore.NewTrustCertificateResource,
 	}
+
+	// Resources for testing.
+	if p.version == "test" {
+		resources = append(resources, newNoopResource)
+	}
+
+	return resources
 }
 
 func (p *LxdProvider) DataSources(_ context.Context) []func() datasource.DataSource {
