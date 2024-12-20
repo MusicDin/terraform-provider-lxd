@@ -99,6 +99,41 @@ jobs:
           terraform_wrapper: false
       - run: make test
 
+  acceptance-tests-cluster:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        channel:
+          - latest/edge
+
+    env:
+      TF_ACC: "1"
+      GO111MODULE: "on"
+      LXD_GENERATE_CLIENT_CERTS: "true"
+      LXD_ACCEPT_SERVER_CERTIFICATE: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Setup LXD cluster
+        uses: ./.github/actions/cluster
+        with:
+          cluster-name: my-cluster
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Run acceptance tests
+        run: make test
+
   build-platforms:
     runs-on: ubuntu-24.04
     steps:
