@@ -1160,6 +1160,7 @@ func TestAccInstance_accessInterfaceFromProfile(t *testing.T) {
 
 func TestAccInstance_target(t *testing.T) {
 	instanceName := acctest.GenerateName(2, "-")
+	target := fmt.Sprintf("%s-2", acctest.TestClusterName)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -1169,16 +1170,16 @@ func TestAccInstance_target(t *testing.T) {
 		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccInstance_target(instanceName, "node-2"),
+				Config: testAccInstance_target(instanceName, target),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("lxd_instance.instance1", "name", fmt.Sprintf("%s-1", instanceName)),
 					resource.TestCheckResourceAttr("lxd_instance.instance1", "status", "Running"),
 					resource.TestCheckResourceAttr("lxd_instance.instance1", "image", acctest.TestImage),
-					resource.TestCheckResourceAttr("lxd_instance.instance1", "target", "node-2"),
+					resource.TestCheckResourceAttr("lxd_instance.instance1", "target", target),
 					resource.TestCheckResourceAttr("lxd_instance.instance2", "name", fmt.Sprintf("%s-2", instanceName)),
 					resource.TestCheckResourceAttr("lxd_instance.instance2", "status", "Running"),
 					resource.TestCheckResourceAttr("lxd_instance.instance2", "image", acctest.TestImage),
-					resource.TestCheckResourceAttr("lxd_instance.instance2", "target", "node-2"),
+					resource.TestCheckResourceAttr("lxd_instance.instance2", "target", target),
 				),
 			},
 		},
