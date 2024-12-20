@@ -150,9 +150,9 @@ func testAccStorageBucket_target(bucketName string) string {
 resource "lxd_storage_bucket" "bucket1" {
   name   = "%s"
   pool   = "default"
-  target = "node-2"
+  target = "%s-2"
 }
- 	`, bucketName)
+ 	`, bucketName, acctest.TestClusterName)
 }
 
 func testAccStorageBucket_project(projectName string, bucketName string) string {
