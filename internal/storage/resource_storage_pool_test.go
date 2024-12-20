@@ -278,10 +278,10 @@ func TestAccStoragePool_target(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node1", "name", poolName),
 					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node1", "driver", driverName),
-					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node1", "target", "node-1"),
+					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node1", "target", fmt.Sprintf("%s-1", acctest.TestClusterName)),
 					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node2", "name", poolName),
 					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node2", "driver", driverName),
-					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node2", "target", "node-2"),
+					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1_node2", "target", fmt.Sprintf("%s-2", acctest.TestClusterName)),
 					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1", "name", poolName),
 					resource.TestCheckResourceAttr("lxd_storage_pool.storage_pool1", "driver", driverName),
 				),
@@ -423,13 +423,13 @@ func testAccStoragePool_target(name, driver string) string {
 resource "lxd_storage_pool" "storage_pool1_node1" {
   name   = "%[1]s"
   driver = "%[2]s"
-  target = "node-1"
+  target = "%[3]s-1"
 }
 
 resource "lxd_storage_pool" "storage_pool1_node2" {
   name   = "%[1]s"
   driver = "%[2]s"
-  target = "node-2"
+  target = "%[3]s-2"
 }
 
 resource "lxd_storage_pool" "storage_pool1" {
@@ -441,7 +441,7 @@ resource "lxd_storage_pool" "storage_pool1" {
   name   = "%[1]s"
   driver = "%[2]s"
 }
-	`, name, driver)
+	`, name, driver, acctest.TestClusterName)
 }
 
 // ensureSource ensures temporary storage pool source is created based on the provided
