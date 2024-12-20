@@ -14,6 +14,11 @@ import (
 // TestImage is a constant that specifies the default image used in all tests.
 const TestImage = "images:alpine/edge"
 
+// TestClusterName is a constant that specifies the name of the cluster.
+// Tests expect that cluster has at least 2 members. Two of them should
+// be named as "<TestClusterName>-{1,2}".
+const TestClusterName = "cls"
+
 // TestCachedImage is a constant that specifies the default image used in image caching tests.
 // NOTE: it must be different from TestImage otherwise tests running in parallel will race to
 // use and delete that image causing random failures.
