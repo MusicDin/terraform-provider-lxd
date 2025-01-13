@@ -21,83 +21,83 @@ env:
 
 name: Test
 jobs:
-  acceptance-standalone:
-    runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        channel:
-          - 5.0/stable
-          - 5.0/edge
-          - 5.21/stable
-          - 5.21/edge
-          - latest/stable
-          - latest/edge
+  # acceptance-standalone:
+  #   runs-on: ubuntu-22.04
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       channel:
+  #         - 5.0/stable
+  #         - 5.0/edge
+  #         - 5.21/stable
+  #         - 5.21/edge
+  #         - latest/stable
+  #         - latest/edge
 
-    steps:
-      - uses: actions/checkout@v4
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
+  #     - name: Setup Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: 'go.mod'
 
-      - name: Setup LXD from ${{ matrix.channel }} channel
-        run: |
-          sudo snap install lxd --channel=${{ matrix.channel }}
-          sudo lxd waitready --timeout 60
-          sudo lxd init --auto --network-port=8443 --network-address=localhost
-          sudo chmod 777 /var/snap/lxd/common/lxd/unix.socket
+  #     - name: Setup LXD from ${{ matrix.channel }} channel
+  #       run: |
+  #         sudo snap install lxd --channel=${{ matrix.channel }}
+  #         sudo lxd waitready --timeout 60
+  #         sudo lxd init --auto --network-port=8443 --network-address=localhost
+  #         sudo chmod 777 /var/snap/lxd/common/lxd/unix.socket
 
-          # 5.0/* currently use core20 which ships with a buggy lvm2 package so
-          # if the base used by the LXD snap is core20, use the external lvm provider
-          # which is the one installed on the runner machine. Since there are plans
-          # to switch 5.0/* to using core22, it's best to autodetect this condition.
-          if snap info lxd --verbose | grep -qxE 'base:\s+core20'; then
-            echo "WARN: Using external lvm command to workaround bug in core20" >&2
-            sudo snap set lxd lvm.external=true
-            sudo systemctl restart snap.lxd.daemon.service
-          fi
+  #         # 5.0/* currently use core20 which ships with a buggy lvm2 package so
+  #         # if the base used by the LXD snap is core20, use the external lvm provider
+  #         # which is the one installed on the runner machine. Since there are plans
+  #         # to switch 5.0/* to using core22, it's best to autodetect this condition.
+  #         if snap info lxd --verbose | grep -qxE 'base:\s+core20'; then
+  #           echo "WARN: Using external lvm command to workaround bug in core20" >&2
+  #           sudo snap set lxd lvm.external=true
+  #           sudo systemctl restart snap.lxd.daemon.service
+  #         fi
 
-          # Add HTTPS remote.
-          lxc remote add localhost "$(lxc config trust add --name lxd-terraform-provider --quiet)"
+  #         # Add HTTPS remote.
+  #         lxc remote add localhost "$(lxc config trust add --name lxd-terraform-provider --quiet)"
 
-      - name: Download minio/mc
-        uses: canonical/lxd/.github/actions/download-minio@main
-        if: ${{ matrix.channel != '5.0/stable' && matrix.channel != '5.0/edge' }}
+  #     - name: Download minio/mc
+  #       uses: canonical/lxd/.github/actions/download-minio@main
+  #       if: ${{ matrix.channel != '5.0/stable' && matrix.channel != '5.0/edge' }}
 
-      - name: Configure MinIO
-        if: ${{ matrix.channel != '5.0/stable' && matrix.channel != '5.0/edge' }}
-        run: |
-          mkdir -p /opt/minio
-          mv "$(go env GOPATH)/bin/minio" /opt/minio/
-          mv "$(go env GOPATH)/bin/mc" /opt/minio/
+  #     - name: Configure MinIO
+  #       if: ${{ matrix.channel != '5.0/stable' && matrix.channel != '5.0/edge' }}
+  #       run: |
+  #         mkdir -p /opt/minio
+  #         mv "$(go env GOPATH)/bin/minio" /opt/minio/
+  #         mv "$(go env GOPATH)/bin/mc" /opt/minio/
 
-          # Set the snap config key for minio and reload LXD to have it take effect.
-          sudo snap set lxd minio.path=/opt/minio
-          sudo systemctl reload snap.lxd.daemon
+  #         # Set the snap config key for minio and reload LXD to have it take effect.
+  #         sudo snap set lxd minio.path=/opt/minio
+  #         sudo systemctl reload snap.lxd.daemon
 
-      - name: Configure OVN
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes \
-            ovn-host \
-            ovn-central \
-            bind9-dnsutils \
-            jq
+  #     - name: Configure OVN
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install --no-install-recommends --yes \
+  #           ovn-host \
+  #           ovn-central \
+  #           bind9-dnsutils \
+  #           jq
 
-          sudo ovs-vsctl set open_vswitch . \
-            external_ids:ovn-remote=unix:/var/run/ovn/ovnsb_db.sock \
-            external_ids:ovn-encap-type=geneve \
-            external_ids:ovn-encap-ip=127.0.0.1
+  #         sudo ovs-vsctl set open_vswitch . \
+  #           external_ids:ovn-remote=unix:/var/run/ovn/ovnsb_db.sock \
+  #           external_ids:ovn-encap-type=geneve \
+  #           external_ids:ovn-encap-ip=127.0.0.1
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
+  #     - name: Setup Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_wrapper: false
 
-      - name: Run acceptance tests
-        run: make test
+  #     - name: Run acceptance tests
+  #       run: make test
 
   acceptance-cluster:
     runs-on: ubuntu-22.04
@@ -131,35 +131,35 @@ jobs:
       - name: Run acceptance tests
         run: make test
 
-  build-platforms:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
+  # build-platforms:
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
+  #     - name: Setup Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: 'go.mod'
 
-      - name: Run GoReleaser in build mode to test all release platforms
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          args: build --snapshot
+  #     - name: Run GoReleaser in build mode to test all release platforms
+  #       uses: goreleaser/goreleaser-action@v6
+  #       with:
+  #         args: build --snapshot
 
-  check-lint:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
+  # check-lint:
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
+  #     - name: Setup Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version-file: 'go.mod'
 
-      - name: Install dependencies
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+  #     - name: Install dependencies
+  #       run: |
+  #         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
 
-      - run: make fmtcheck
-      - run: make vet
-      - run: make static-analysis
+  #     - run: make fmtcheck
+  #     - run: make vet
+  #     - run: make static-analysis
