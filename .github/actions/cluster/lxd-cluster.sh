@@ -151,29 +151,6 @@ deploy() {
 
                 # Install LXD snap.
                 lxc exec "${instance}" -- snap install lxd --channel "${VERSION_LXD}" || lxc exec "${instance}" -- snap refresh lxd --channel "${VERSION_LXD}"
-
-                hasBucketSupport=$(lxc exec "${instance}" -- lxc info | grep "storage_buckets" || true)
-
-                # Install MinIO if enabled.
-                if [ "${MINIO_ENABLED}" = "true" ] && [ "${hasBucketSupport}" != "" ]; then
-                        echo "Installing MinIO server and client on instance ${instance} ..."
-
-                        lxc exec "${instance}" -- mkdir -p "${MINIO_INSTALL_DIR}"
-
-                        # Download latest minio server and client.
-                        lxc exec "${instance}" -- curl -sSfL https://dl.min.io/server/minio/release/linux-amd64/minio --output "${MINIO_INSTALL_DIR}/minio"
-                        lxc exec "${instance}" -- curl -sSfL https://dl.min.io/client/mc/release/linux-amd64/mc --output "${MINIO_INSTALL_DIR}/mc"
-
-                        # Ensure binaries are executable.
-                        lxc exec "${instance}" -- chmod +x "${MINIO_INSTALL_DIR}/minio"
-                        lxc exec "${instance}" -- chmod +x "${MINIO_INSTALL_DIR}/mc"
-
-                        # Configure MinIO.
-                        lxc exec "${instance}" -- snap set lxd minio.path="${MINIO_INSTALL_DIR}"
-                        lxc exec "${instance}" -- snap restart lxd
-                        lxc exec "${instance}" -- lxd waitready --timeout 30
-                        lxc exec "${instance}" -- lxc config set core.storage_buckets_address ":8555" || true
-                fi
         done
 
         echo "Cluster instances created."
@@ -218,6 +195,39 @@ cluster:
   cluster_token: ${token}
 EOF
         done
+
+        # Install and configure MinIO on each cluster member.
+        if [ "${MINIO_ENABLED}" == "true" ]; then
+                curl -sSfL https://dl.min.io/server/minio/release/linux-amd64/minio --output "/tmp/minio"
+                curl -sSfL https://dl.min.io/client/mc/release/linux-amd64/mc --output "/tmp/mc"
+
+                chmod +x "/tmp/minio"
+                chmod +x "/tmp/mc"
+
+                for i in $(seq 1 "${CLUSTER_SIZE}"); do
+                        instance="${INSTANCE}-${i}"
+                        hasBucketSupport=$(lxc exec "${instance}" -- lxc info | grep -e "- storage_buckets" || true)
+
+                        # Install MinIO if enabled.
+                        if [ "${hasBucketSupport}" != "" ]; then
+                                echo "Installing MinIO server and client on instance ${instance} ..."
+
+                                lxc exec "${instance}" -- mkdir -p "${MINIO_INSTALL_DIR}"
+
+                                # Upload MinIO sever and client binaries.
+                                lxc file push /tmp/minio "${instance}/${MINIO_INSTALL_DIR}/minio"
+                                lxc file push /tmp/mc "${instance}${MINIO_INSTALL_DIR}/mc"
+
+                                # Configure MinIO.
+                                lxc exec "${instance}" -- snap set lxd minio.path="${MINIO_INSTALL_DIR}"
+                                lxc exec "${instance}" -- snap restart lxd
+                                lxc exec "${instance}" -- lxd waitready --timeout 30
+                                lxc exec "${instance}" -- lxc config set core.storage_buckets_address ":8555" || true
+                        fi
+                done
+
+                rm /tmp/minio /tmp/mc
+        fi
 
         # Create default storage pool.
         exists=$(lxc exec "${LEADER}" -- lxc storage list | grep "default" || true)
