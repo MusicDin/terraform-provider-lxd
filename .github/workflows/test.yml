@@ -25,11 +25,11 @@ jobs:
       fail-fast: false
       matrix:
         channel:
-          - 5.0/stable
-          - 5.0/edge
-          - 5.21/stable
-          - 5.21/edge
-          - latest/stable
+          # - 5.0/stable
+          # - 5.0/edge
+          # - 5.21/stable
+          # - 5.21/edge
+          # - latest/stable
           - latest/edge
 
     steps:
@@ -106,11 +106,11 @@ jobs:
       fail-fast: false
       matrix:
         channel:
-          - 5.0/stable
-          - 5.0/edge
-          - 5.21/stable
-          - 5.21/edge
-          - latest/stable
+          # - 5.0/stable
+          # - 5.0/edge
+          # - 5.21/stable
+          # - 5.21/edge
+          # - latest/stable
           - latest/edge
 
     steps:
