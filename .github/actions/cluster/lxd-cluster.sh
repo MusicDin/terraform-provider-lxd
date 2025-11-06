@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -o pipefail -eux
 
 #================================================
 # Variables
