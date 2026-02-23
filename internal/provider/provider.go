@@ -248,6 +248,7 @@ func (p *LxdProvider) Configure(ctx context.Context, req provider.ConfigureReque
 func (p *LxdProvider) Resources(_ context.Context) []func() resource.Resource {
 	resources := []func() resource.Resource{
 		auth.NewAuthGroupResource,
+		auth.NewAuthIdentityResource,
 		image.NewCachedImageResource,
 		image.NewPublishImageResource,
 		instance.NewInstanceResource,
