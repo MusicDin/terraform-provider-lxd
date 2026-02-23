@@ -83,6 +83,60 @@ func TestAccIdentity_tls(t *testing.T) {
 	})
 }
 
+func TestAccIdentity_importEmpty(t *testing.T) {
+	resourceName := "lxd_auth_identity.identity"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			acctest.PreCheck(t)
+			acctest.PreCheckAPIExtensions(t, "access_management")
+		},
+		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccIdentity_bearer("tf-auth-identity", []string{}),
+			},
+			{
+				ResourceName:                         resourceName,
+				ImportStateId:                        "/bearer/tf-auth-identity",
+				ImportState:                          true,
+				ImportStateVerify:                    true,
+				ImportStateVerifyIdentifierAttribute: "name",
+			},
+		},
+	})
+}
+
+func TestAccIdentity_importWithGroups(t *testing.T) {
+	resourceName := "lxd_auth_identity.identity"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			acctest.PreCheck(t)
+			acctest.PreCheckAPIExtensions(t, "access_management")
+		},
+		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories,
+		ExternalProviders: map[string]resource.ExternalProvider{
+			"tls": {
+				VersionConstraint: "~> 4.0",
+				Source:            "hashicorp/tls",
+			},
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: testAccIdentity_tls("tf-auth-identity", []string{"admins"}),
+			},
+			{
+				ResourceName:                         resourceName,
+				ImportStateId:                        "/tls/tf-auth-identity",
+				ImportState:                          true,
+				ImportStateVerify:                    true,
+				ImportStateVerifyIdentifierAttribute: "name",
+			},
+		},
+	})
+}
+
 func testAccIdentity_bearer(name string, groups []string) string {
 	return fmt.Sprintf(`
                 resource "lxd_auth_identity" "identity" {
