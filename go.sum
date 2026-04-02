@@ -13,8 +13,8 @@ github.com/bmatcuk/doublestar/v4 v4.10.0 h1:zU9WiOla1YA122oLM6i4EXvGW62DvKZVxIe6
 github.com/bmatcuk/doublestar/v4 v4.10.0/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bufbuild/protocompile v0.14.1 h1:iA73zAf/fyljNjQKwYzUHD6AD4R8KMasmwa/FBatYVw=
 github.com/bufbuild/protocompile v0.14.1/go.mod h1:ppVdAIhbr2H8asPk6k4pY7t9zB1OU5DoEw9xY/FUi1c=
-github.com/canonical/lxd v0.0.0-20260330183433-e43b86d41ba9 h1:ql/yIpg2udiRgLftcm3/D3N4xc0QEK2gHM7LCQ+xi/Q=
-github.com/canonical/lxd v0.0.0-20260330183433-e43b86d41ba9/go.mod h1:S43ldfUKDP9N0buMkulvANxUVNm+NdolM6MrsigARKQ=
+github.com/canonical/lxd v0.0.0-20260402100224-491dd1403f1a h1:m/HpcmaLuwOWq7gUiDx92tdZnTyLlUrQj520JqJwejU=
+github.com/canonical/lxd v0.0.0-20260402100224-491dd1403f1a/go.mod h1:S43ldfUKDP9N0buMkulvANxUVNm+NdolM6MrsigARKQ=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
