@@ -361,6 +361,13 @@ func (r StoragePoolResource) SyncState(ctx context.Context, tfState *tfsdk.State
 	return tfState.Set(ctx, &m)
 }
 
+// TaintState marks the state with identity fields required to target the storage pool.
+func (m StoragePoolModel) TaintState(ctx context.Context, tfState *tfsdk.State) {
+	tfState.SetAttribute(ctx, path.Root("name"), m.Name.ValueString())
+	tfState.SetAttribute(ctx, path.Root("project"), m.Project.ValueString())
+	tfState.SetAttribute(ctx, path.Root("remote"), m.Remote.ValueString())
+}
+
 // ComputedKeys returns list of computed config keys.
 func (m StoragePoolModel) ComputedKeys(driver string) []string {
 	var keys []string
