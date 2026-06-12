@@ -292,18 +292,13 @@ configure_ovn() {
                 exit 1
         fi
 
-        # LXD versions older than MIN_LXD_VERSION_OVN_SSL do not have the MicroOVN content interface
-        # plugs and do not support the OVN SSL config keys in LXD.
-        MIN_LXD_VERSION_OVN_SSL="5.21"
-        lxdVersion=$(lxc exec "${LEADER}" -- lxc version | awk -F': ' '/^Server version/{print $2}')
-
         echo "Installing MicroOVN on cluster members ..."
 
         for i in $(seq 1 "${CLUSTER_SIZE}"); do
                 instance="${INSTANCE}-${i}"
                 lxc exec "${instance}" -- snap install microovn --channel "${VERSION_MICROOVN}"
 
-                if dpkg --compare-versions "${lxdVersion}" ge "${MIN_LXD_VERSION_OVN_SSL}"; then
+                if lxc exec "${instance}" -- snap connections lxd | grep -qwF lxd:ovn-certificates; then
                         # Connect LXD's MicroOVN content interface plugs so LXD can access OVN
                         # certificates and local OVS chassis data.
                         lxc exec "${instance}" -- snap connect lxd:ovn-certificates microovn:ovn-certificates
@@ -344,7 +339,11 @@ configure_ovn() {
         done
 
         echo "Configuring LXD OVN northbound connection to use MicroOVN ..."
-        if dpkg --compare-versions "${lxdVersion}" lt "${MIN_LXD_VERSION_OVN_SSL}"; then
+        if lxc exec "${LEADER}" -- lxc info | grep -qxF -- "- ovn_dynamic_northbound_connection"; then
+                # LXD reads the OVN northbound connection and certificates from MicroOVN
+                # automatically, no manual configuration needed.
+                echo "LXD supports dynamic OVN northbound connection discovery."
+        else
                 # LXD 5.0 resolves OVN southbound info through host ovs-vsctl and uses legacy OVN
                 # client cert paths.
                 for i in $(seq 1 "${CLUSTER_SIZE}"); do
@@ -359,17 +358,6 @@ configure_ovn() {
 
                 leaderIPv4=$(instanceIPv4 "${LEADER}")
                 lxc exec "${LEADER}" -- lxc config set network.ovn.northbound_connection="ssl:${leaderIPv4}:6641"
-        else
-                caCert=$(lxc exec "${LEADER}" -- cat "${MICROOVN_PKI_DIR}/cacert.pem")
-                clientCert=$(lxc exec "${LEADER}" -- cat "${MICROOVN_PKI_DIR}/client-cert.pem")
-                clientKey=$(lxc exec "${LEADER}" -- cat "${MICROOVN_PKI_DIR}/client-privkey.pem")
-
-                leaderIPv4=$(instanceIPv4 "${LEADER}")
-                lxc exec "${LEADER}" -- lxc config set \
-                        network.ovn.northbound_connection="ssl:${leaderIPv4}:6641" \
-                        network.ovn.ca_cert="${caCert}" \
-                        network.ovn.client_cert="${clientCert}" \
-                        network.ovn.client_key="${clientKey}"
         fi
 }
 
