@@ -66,6 +66,23 @@ func TestAccImage_DS_cached(t *testing.T) {
 	})
 }
 
+func TestAccImage_DS_fingerprintWithArchitecture(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { acctest.PreCheck(t) },
+		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: acctest.Provider() + testAccImage_DS_fingerprintWithArchitecture(),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("data.lxd_image.img", "type", "container"),
+					resource.TestCheckResourceAttrPair("data.lxd_image.img", "fingerprint", "lxd_image.img", "fingerprint"),
+					resource.TestCheckResourceAttrPair("data.lxd_image.img", "architecture", "lxd_image.img", "source_image.architecture"),
+				),
+			},
+		},
+	})
+}
+
 func TestAccImage_DS_project(t *testing.T) {
 	projectName := acctest.GenerateName(2, "")
 
@@ -118,6 +135,21 @@ data "lxd_image" "img" {
   image = lxd_image.img.fingerprint
 }
 	`, strings.Join(aliases, `","`), acctest.TestCachedImage)
+}
+
+func testAccImage_DS_fingerprintWithArchitecture() string {
+	return fmt.Sprintf(`
+resource "lxd_image" "img" {
+  source_image = {
+    image = %q
+  }
+}
+
+data "lxd_image" "img" {
+  image        = lxd_image.img.fingerprint
+  architecture = lxd_image.img.source_image.architecture
+}
+	`, acctest.TestCachedImage)
 }
 
 func testAccImage_DS_project(project string) string {

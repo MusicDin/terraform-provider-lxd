@@ -134,27 +134,33 @@ func (d *ImageDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		imageType := state.Type.ValueString()
 		availableArchitectures, err := server.GetImageAliasArchitectures(imageType, identifier)
 		if err != nil {
-			resp.Diagnostics.AddError("Failed to get image alias architectures", err.Error())
-			return
-		}
-
-		found := false
-		for imageArchitecture, imageAlias := range availableArchitectures {
-			if imageArchitecture == architecture {
-				fingerprint = imageAlias.Target
-				found = true
+			if !errors.IsNotFoundError(err) {
+				resp.Diagnostics.AddError("Failed to get image alias architectures", err.Error())
+				return
 			}
-		}
 
-		if !found {
-			keys := make([]string, 0, len(availableArchitectures))
-			for key := range availableArchitectures {
-				keys = append(keys, key)
+			// The identifier is not a known alias. Treat it as a fingerprint.
+			fingerprint = identifier
+		} else {
+			found := false
+			for imageArchitecture, imageAlias := range availableArchitectures {
+				if imageArchitecture == architecture {
+					fingerprint = imageAlias.Target
+					found = true
+				}
 			}
-			keyList := strings.Join(keys, ", ")
 
-			resp.Diagnostics.AddError(fmt.Sprintf("No image alias found for architecture: %s. Available architectures: %s ", architecture, keyList), "")
-			return
+			if !found {
+				keys := make([]string, 0, len(availableArchitectures))
+				for key := range availableArchitectures {
+					keys = append(keys, key)
+				}
+
+				keyList := strings.Join(keys, ", ")
+
+				resp.Diagnostics.AddError(fmt.Sprintf("No image alias found for architecture: %s. Available architectures: %s ", architecture, keyList), "")
+				return
+			}
 		}
 	} else {
 		var imageAlias *api.ImageAliasesEntry
@@ -167,9 +173,12 @@ func (d *ImageDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 
 		if err == nil {
 			fingerprint = imageAlias.Target
-		} else {
+		} else if errors.IsNotFoundError(err) {
 			// Not a known alias, treat the identifier as a fingerprint.
 			fingerprint = identifier
+		} else {
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to get image alias %q", identifier), err.Error())
+			return
 		}
 	}
 

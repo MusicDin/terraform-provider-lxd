@@ -285,6 +285,49 @@ func TestAccImage_sourceInstance(t *testing.T) {
 					resource.TestCheckResourceAttr("lxd_image.img1", "source_instance.name", instanceName),
 					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.#", "1"),
 					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.0", instanceName),
+					resource.TestCheckResourceAttrSet("lxd_image.img1", "fingerprint"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccImage_sourceInstanceAddRemoveAlias(t *testing.T) {
+	projectName := acctest.GenerateName(2, "")
+	instanceName := acctest.GenerateName(2, "-")
+	alias1 := acctest.GenerateName(2, "-")
+	alias2 := acctest.GenerateName(2, "-")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { acctest.PreCheck(t) },
+		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: acctest.Provider() + testAccImage_sourceInstanceAliases(projectName, instanceName, alias1),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_instance.name", instanceName),
+					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.#", "1"),
+					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.0", alias1),
+					resource.TestCheckResourceAttrSet("lxd_image.img1", "fingerprint"),
+				),
+			},
+			{
+				// Add a second alias.
+				Config: acctest.Provider() + testAccImage_sourceInstanceAliases(projectName, instanceName, alias1, alias2),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_instance.name", instanceName),
+					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.#", "2"),
+					resource.TestCheckTypeSetElemAttr("lxd_image.img1", "aliases.*", alias1),
+					resource.TestCheckTypeSetElemAttr("lxd_image.img1", "aliases.*", alias2),
+				),
+			},
+			{
+				// Remove the first alias.
+				Config: acctest.Provider() + testAccImage_sourceInstanceAliases(projectName, instanceName, alias2),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_instance.name", instanceName),
+					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.#", "1"),
+					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.0", alias2),
 				),
 			},
 		},
@@ -306,6 +349,7 @@ func TestAccImage_sourceInstanceWithSnapshot(t *testing.T) {
 					resource.TestCheckResourceAttr("lxd_image.img1", "source_instance.snapshot", "snap0"),
 					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.#", "1"),
 					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.0", instanceName),
+					resource.TestCheckResourceAttrSet("lxd_image.img1", "fingerprint"),
 				),
 			},
 		},
@@ -499,6 +543,36 @@ resource "lxd_image" "img1" {
   }
 }
 	`, projectName, instanceName, acctest.TestImage)
+}
+
+func testAccImage_sourceInstanceAliases(projectName string, instanceName string, aliases ...string) string {
+	return fmt.Sprintf(`
+resource "lxd_project" "project1" {
+  name = "%[1]s"
+
+  config = {
+    "features.images"   = false
+    "features.profiles" = false
+  }
+}
+
+resource "lxd_instance" "instance1" {
+  project = lxd_project.project1.name
+  name    = "%[2]s"
+  image   = "%[3]s"
+  running = false
+}
+
+resource "lxd_image" "img1" {
+  project = lxd_project.project1.name
+
+  aliases = ["%[4]s"]
+
+  source_instance = {
+    name = lxd_instance.instance1.name
+  }
+}
+	`, projectName, instanceName, acctest.TestImage, strings.Join(aliases, `","`))
 }
 
 func testAccImage_sourceInstanceWithSnapshot(projectName string, instanceName string) string {
