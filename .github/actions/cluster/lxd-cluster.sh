@@ -346,15 +346,15 @@ configure_ovn() {
         else
                 # LXD 5.0 resolves OVN southbound info through host ovs-vsctl and uses legacy OVN
                 # client cert paths.
-                for i in $(seq 1 "${CLUSTER_SIZE}"); do
-                        instance="${INSTANCE}-${i}"
+                # for i in $(seq 1 "${CLUSTER_SIZE}"); do
+                #         instance="${INSTANCE}-${i}"
 
-                        lxc exec "${instance}" -- mkdir -p /var/run/openvswitch /etc/ovn
-                        lxc exec "${instance}" -- ln -sf /var/snap/microovn/common/run/switch/db.sock /var/run/openvswitch/db.sock
-                        lxc exec "${instance}" -- ln -sf "${MICROOVN_PKI_DIR}/client-cert.pem" /etc/ovn/cert_host
-                        lxc exec "${instance}" -- ln -sf "${MICROOVN_PKI_DIR}/client-privkey.pem" /etc/ovn/key_host
-                        lxc exec "${instance}" -- ln -sf "${MICROOVN_PKI_DIR}/cacert.pem" /etc/ovn/ovn-central.crt
-                done
+                #         lxc exec "${instance}" -- mkdir -p /var/run/openvswitch /etc/ovn
+                #         lxc exec "${instance}" -- ln -sf /var/snap/microovn/common/run/switch/db.sock /var/run/openvswitch/db.sock
+                #         lxc exec "${instance}" -- ln -sf "${MICROOVN_PKI_DIR}/client-cert.pem" /etc/ovn/cert_host
+                #         lxc exec "${instance}" -- ln -sf "${MICROOVN_PKI_DIR}/client-privkey.pem" /etc/ovn/key_host
+                #         lxc exec "${instance}" -- ln -sf "${MICROOVN_PKI_DIR}/cacert.pem" /etc/ovn/ovn-central.crt
+                # done
 
                 leaderIPv4=$(instanceIPv4 "${LEADER}")
                 lxc exec "${LEADER}" -- lxc config set network.ovn.northbound_connection="ssl:${leaderIPv4}:6641"
