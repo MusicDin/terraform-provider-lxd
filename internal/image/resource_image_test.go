@@ -19,8 +19,7 @@ func TestAccImage_basic(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_basic(),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.copy_aliases", "true"),
 					resource.TestCheckResourceAttr("lxd_image.img1", "copied_aliases.#", "2"),
 				),
@@ -37,8 +36,7 @@ func TestAccImage_basicVM(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_basicVM(),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img1vm", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img1vm", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img1vm", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img1vm", "source_image.copy_aliases", "true"),
 					resource.TestCheckResourceAttr("lxd_image.img1vm", "source_image.type", "virtual-machine"),
 					resource.TestCheckResourceAttr("lxd_image.img1vm", "copied_aliases.#", "2"),
@@ -59,8 +57,7 @@ func TestAccImage_alias(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_aliases(alias1, alias2),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.copy_aliases", "false"),
 					resource.TestCheckResourceAttr("lxd_image.img2", "aliases.#", "2"),
 					resource.TestCheckTypeSetElemAttr("lxd_image.img2", "aliases.*", alias1),
@@ -83,8 +80,7 @@ func TestAccImage_copiedAliases(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_copiedAliases(alias1, alias2),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img3", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img3", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img3", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img3", "source_image.copy_aliases", "true"),
 					resource.TestCheckResourceAttr("lxd_image.img3", "aliases.#", "3"),
 					resource.TestCheckTypeSetElemAttr("lxd_image.img3", "aliases.*", acctest.TestCachedImageSourceImage),
@@ -105,8 +101,7 @@ func TestAccImage_aliasCollision(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_aliasCollision(),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img4", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img4", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img4", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img4", "source_image.copy_aliases", "true"),
 					resource.TestCheckResourceAttr("lxd_image.img4", "aliases.#", "1"),
 					resource.TestCheckResourceAttr("lxd_image.img4", "aliases.0", acctest.TestCachedImageSourceImage+"/amd64"),
@@ -127,8 +122,7 @@ func TestAccImage_aliasExists(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_aliasExists1(alias),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.exists1", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.exists1", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.exists1", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.exists1", "source_image.copy_aliases", "false"),
 					resource.TestCheckResourceAttr("lxd_image.exists1", "aliases.#", "1"),
 					resource.TestCheckResourceAttr("lxd_image.exists1", "aliases.0", alias),
@@ -154,8 +148,7 @@ func TestAccImage_addRemoveAlias(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_aliases(alias1),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.copy_aliases", "false"),
 					resource.TestCheckResourceAttr("lxd_image.img2", "aliases.#", "1"),
 					resource.TestCheckResourceAttr("lxd_image.img2", "aliases.0", alias1),
@@ -165,8 +158,7 @@ func TestAccImage_addRemoveAlias(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_aliases(alias1, alias2),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.copy_aliases", "false"),
 					resource.TestCheckResourceAttr("lxd_image.img2", "aliases.#", "2"),
 					resource.TestCheckTypeSetElemAttr("lxd_image.img2", "aliases.*", alias1),
@@ -177,8 +169,7 @@ func TestAccImage_addRemoveAlias(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_aliases(alias2),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img2", "source_image.copy_aliases", "false"),
 					resource.TestCheckResourceAttr("lxd_image.img2", "aliases.#", "1"),
 					resource.TestCheckResourceAttr("lxd_image.img2", "aliases.0", alias2),
@@ -200,8 +191,7 @@ func TestAccImage_project(t *testing.T) {
 				Config: acctest.Provider() + testAccImage_project(projectName),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("lxd_project.project1", "name", projectName),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img1", "project", projectName),
 					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.#", "0"),
 					resource.TestCheckResourceAttr("lxd_image.img1", "copied_aliases.#", "0"),
@@ -236,8 +226,7 @@ func TestAccImage_instanceFromImageFingerprint(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("lxd_project.project1", "name", projectName),
 					resource.TestCheckResourceAttr("lxd_image.img1", "project", projectName),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_instance.inst", "name", instanceName),
 					resource.TestCheckResourceAttr("lxd_instance.inst", "project", projectName),
 				),
@@ -250,8 +239,7 @@ func TestAccImage_instanceFromImageFingerprint(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("lxd_project.project1", "name", projectName),
 					resource.TestCheckResourceAttr("lxd_image.img1", "project", projectName),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_instance.inst", "name", instanceName),
 					resource.TestCheckResourceAttr("lxd_instance.inst", "project", projectName),
 				),
@@ -272,8 +260,7 @@ func TestAccImage_architecture(t *testing.T) {
 				Config: acctest.Provider() + testAccImage_architecture(projectName, architecture),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("lxd_project.project1", "name", projectName),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.remote", acctest.TestCachedImageSourceRemote),
-					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("lxd_image.img1", "source_image.architecture", architecture),
 					resource.TestCheckResourceAttr("lxd_image.img1", "project", projectName),
 					resource.TestCheckResourceAttr("lxd_image.img1", "aliases.#", "0"),
@@ -329,25 +316,23 @@ func testAccImage_basic() string {
 	return fmt.Sprintf(`
 resource "lxd_image" "img1" {
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     copy_aliases = true
   }
 }
-	`, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, acctest.TestCachedImage)
 }
 
 func testAccImage_basicVM() string {
 	return fmt.Sprintf(`
 resource "lxd_image" "img1vm" {
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     type         = "virtual-machine"
     copy_aliases = true
   }
 }
-	`, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, acctest.TestCachedImage)
 }
 
 func testAccImage_aliases(aliases ...string) string {
@@ -356,12 +341,11 @@ resource "lxd_image" "img2" {
   aliases = ["%s"]
 
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     copy_aliases = false
   }
 }
-	`, strings.Join(aliases, `","`), acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, strings.Join(aliases, `","`), acctest.TestCachedImage)
 }
 
 func testAccImage_aliasExists1(alias string) string {
@@ -370,12 +354,11 @@ resource "lxd_image" "exists1" {
   aliases = ["%s"]
 
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     copy_aliases = false
   }
 }
-	`, alias, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, alias, acctest.TestCachedImage)
 }
 
 func testAccImage_aliasExists2(alias string) string {
@@ -384,8 +367,7 @@ resource "lxd_image" "exists1" {
   aliases = ["%s"]
 
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     copy_aliases = false
   }
 }
@@ -394,12 +376,11 @@ resource "lxd_image" "exists2" {
   aliases = ["%s"]
 
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     copy_aliases = false
   }
 }
-	`, alias, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage, alias, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, alias, acctest.TestCachedImage, alias, acctest.TestCachedImage)
 }
 
 func testAccImage_copiedAliases(aliases ...string) string {
@@ -408,12 +389,11 @@ resource "lxd_image" "img3" {
   aliases = ["%s","%s"]
 
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     copy_aliases = true
   }
 }
-	`, acctest.TestCachedImageSourceImage, strings.Join(aliases, `","`), acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, acctest.TestCachedImageSourceImage, strings.Join(aliases, `","`), acctest.TestCachedImage)
 }
 
 func testAccImage_aliasCollision() string {
@@ -422,12 +402,11 @@ resource "lxd_image" "img4" {
   aliases = ["%s/amd64"]
 
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     copy_aliases = true
   }
 }
-	`, acctest.TestCachedImageSourceImage, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, acctest.TestCachedImageSourceImage, acctest.TestCachedImage)
 }
 
 func testAccImage_project(project string) string {
@@ -440,11 +419,10 @@ resource "lxd_image" "img1" {
   project = lxd_project.project1.name
 
   source_image = {
-    remote = "%s"
-    name   = "%s"
+    image = "%s"
   }
 }
-	`, project, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage)
+	`, project, acctest.TestCachedImage)
 }
 
 func testAccImage_instanceFromImageFingerprint(project string, instanceName string, instanceRemote string) string {
@@ -462,8 +440,7 @@ resource "lxd_image" "img1" {
   project = lxd_project.project1.name
 
   source_image = {
-    remote = "%s"
-    name   = "%s"
+    image = "%s"
   }
 }
 
@@ -474,7 +451,7 @@ resource "lxd_instance" "inst" {
     project = lxd_project.project1.name
     running = false
 }
-	`, project, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage, instanceName, instanceRemote)
+	`, project, acctest.TestCachedImage, instanceName, instanceRemote)
 }
 
 func testAccImage_architecture(project string, architecture string) string {
@@ -487,12 +464,11 @@ resource "lxd_image" "img1" {
   project = lxd_project.project1.name
 
   source_image = {
-    remote       = "%s"
-    name         = "%s"
+    image        = "%s"
     architecture = "%s"
   }
 }
-	`, project, acctest.TestCachedImageSourceRemote, acctest.TestCachedImageSourceImage, architecture)
+	`, project, acctest.TestCachedImage, architecture)
 }
 
 func testAccImage_sourceInstance(projectName string, instanceName string) string {
