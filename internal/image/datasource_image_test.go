@@ -17,7 +17,7 @@ func TestAccImage_DS_basic(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_DS_basic(),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("data.lxd_image.img", "name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("data.lxd_image.img", "image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("data.lxd_image.img", "type", "container"),
 					resource.TestCheckResourceAttr("data.lxd_image.img", "aliases.#", "2"),
 					resource.TestCheckResourceAttrSet("data.lxd_image.img", "architecture"),
@@ -36,7 +36,7 @@ func TestAccImage_DS_basicVM(t *testing.T) {
 			{
 				Config: acctest.Provider() + testAccImage_DS_basicVM(),
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("data.lxd_image.img", "name", acctest.TestCachedImageSourceImage),
+					resource.TestCheckResourceAttr("data.lxd_image.img", "image", acctest.TestCachedImage),
 					resource.TestCheckResourceAttr("data.lxd_image.img", "type", "virtual-machine"),
 					resource.TestCheckResourceAttr("data.lxd_image.img", "aliases.#", "2"),
 					resource.TestCheckResourceAttrSet("data.lxd_image.img", "architecture"),
@@ -60,7 +60,6 @@ func TestAccImage_DS_cached(t *testing.T) {
 					resource.TestCheckResourceAttr("data.lxd_image.img", "aliases.1", "custom-alias2"),
 					resource.TestCheckResourceAttrSet("data.lxd_image.img", "architecture"),
 					resource.TestCheckResourceAttrSet("data.lxd_image.img", "fingerprint"),
-					resource.TestCheckNoResourceAttr("data.lxd_image.img", "name"),
 				),
 			},
 		},
@@ -81,7 +80,6 @@ func TestAccImage_DS_project(t *testing.T) {
 					resource.TestCheckResourceAttr("data.lxd_image.img", "project", projectName),
 					resource.TestCheckResourceAttrSet("data.lxd_image.img", "architecture"),
 					resource.TestCheckResourceAttrSet("data.lxd_image.img", "fingerprint"),
-					resource.TestCheckNoResourceAttr("data.lxd_image.img", "name"),
 				),
 			},
 		},
@@ -91,20 +89,18 @@ func TestAccImage_DS_project(t *testing.T) {
 func testAccImage_DS_basic() string {
 	return fmt.Sprintf(`
 data "lxd_image" "img" {
-  name   = %q
-  remote = %q
+  image = %q
 }
-	`, acctest.TestCachedImageSourceImage, acctest.TestCachedImageSourceRemote)
+	`, acctest.TestCachedImage)
 }
 
 func testAccImage_DS_basicVM() string {
 	return fmt.Sprintf(`
 data "lxd_image" "img" {
-  name   = %q
-  type   = "virtual-machine"
-  remote = %q
+  image = %q
+  type  = "virtual-machine"
 }
-	`, acctest.TestCachedImageSourceImage, acctest.TestCachedImageSourceRemote)
+	`, acctest.TestCachedImage)
 }
 
 func testAccImage_DS_cached(aliases ...string) string {
@@ -119,7 +115,7 @@ resource "lxd_image" "img" {
 }
 
 data "lxd_image" "img" {
-  fingerprint = lxd_image.img.fingerprint
+  image = lxd_image.img.fingerprint
 }
 	`, strings.Join(aliases, `","`), acctest.TestCachedImage)
 }
@@ -139,8 +135,8 @@ resource "lxd_image" "img" {
 }
 
 data "lxd_image" "img" {
-  fingerprint = lxd_image.img.fingerprint
-  project     = lxd_project.proj.name
+  image   = lxd_image.img.fingerprint
+  project = lxd_project.proj.name
 }
 	`, project, acctest.TestCachedImage)
 }
