@@ -30,8 +30,15 @@ const metadataConfigExtension = "metadata_configuration"
 
 // ServerModel represents LXD server resource.
 type ServerModel struct {
-	Remote types.String `tfsdk:"remote"`
-	Config types.Map    `tfsdk:"config"`
+	Remote          types.String `tfsdk:"remote"`
+	Config          types.Map    `tfsdk:"config"`
+	MemberOverrides types.Map    `tfsdk:"member_overrides"`
+	Members         types.Map    `tfsdk:"members"`
+}
+
+// ServerMemberModel represents a per-member server configuration.
+type ServerMemberModel struct {
+	Config types.Map `tfsdk:"config"`
 }
 
 // ServerResource represents LXD server resource.
@@ -58,15 +65,45 @@ func (r ServerResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 
-			// Contains global LXD server configuration keys that are
-			// managed by Terraform. Only keys present in this map are
-			// tracked and modified. Member-specific (local) configuration
-			// keys are not supported and are rejected.
+			// Contains global server configuration keys, as well as
+			// member-specific (local) keys that act as defaults applied to
+			// all cluster members, unless overridden in "member_overrides".
+			// Only keys present in this map are tracked and modified.
 			"config": schema.MapAttribute{
 				Optional:    true,
 				Computed:    true,
 				ElementType: types.StringType,
 				Default:     mapdefault.StaticValue(types.MapValueMust(types.StringType, map[string]attr.Value{})),
+			},
+
+			// Contains member-specific (local) configuration overrides.
+			// Overrides take precedence over the local defaults defined in
+			// "config". Only allowed when LXD is clustered.
+			"member_overrides": schema.MapNestedAttribute{
+				Optional: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"config": schema.MapAttribute{
+							Optional:    true,
+							ElementType: types.StringType,
+						},
+					},
+				},
+			},
+
+			// Contains the resolved member-specific (local) configuration
+			// for all cluster members, limited to the keys tracked via
+			// "config" (local defaults) and "member_overrides".
+			"members": schema.MapNestedAttribute{
+				Computed: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"config": schema.MapAttribute{
+							Computed:    true,
+							ElementType: types.StringType,
+						},
+					},
+				},
 			},
 		},
 	}
@@ -85,6 +122,51 @@ func (r *ServerResource) Configure(_ context.Context, req resource.ConfigureRequ
 	}
 
 	r.provider = provider
+}
+
+func (r ServerResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		// Nothing to do on destroy.
+		return
+	}
+
+	var plan ServerModel
+
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Cannot resolve members if config or member_overrides are not yet known.
+	if plan.Config.IsUnknown() || plan.MemberOverrides.IsUnknown() {
+		return
+	}
+
+	remote := plan.Remote.ValueString()
+	server, err := r.provider.InstanceServer(remote, "", "")
+	if err != nil {
+		resp.Diagnostics.Append(errors.NewInstanceServerError(err))
+		return
+	}
+
+	if err := requireMetadataConfigExtension(server); err != nil {
+		resp.Diagnostics.AddError("Unsupported LXD server", err.Error())
+		return
+	}
+
+	_, memberConfigs, err := plan.ParseServerConfigs(ctx, server)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to parse server configuration", err.Error())
+		return
+	}
+
+	membersValue, diags := toServerMembersTypeFromConfigs(ctx, memberConfigs)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+		return
+	}
+
+	resp.Plan.SetAttribute(ctx, path.Root("members"), membersValue)
 }
 
 func (r ServerResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -108,34 +190,22 @@ func (r ServerResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	planConfig, diags := common.ToConfigMap(ctx, plan.Config)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	if err := validateServerConfigKeys(server, planConfig); err != nil {
-		resp.Diagnostics.AddError("Invalid server configuration", err.Error())
-		return
-	}
-
-	apiServer, etag, err := server.GetServer()
+	globalConfig, memberConfigs, err := plan.ParseServerConfigs(ctx, server)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to retrieve LXD server configuration", err.Error())
+		resp.Diagnostics.AddError("Failed to parse server configuration", err.Error())
 		return
 	}
 
-	// Overlay the user-managed keys on top of the existing server
-	// configuration so unrelated settings are never touched.
-	newConfig := maps.Clone(apiServer.Config)
-	for k, v := range planConfig {
-		newConfig[k] = v
-	}
-
-	err = server.UpdateServer(api.ServerPut{Config: newConfig}, etag)
-	if err != nil {
+	if err := applyServerConfig(server, globalConfig, nil); err != nil {
 		resp.Diagnostics.AddError("Failed to update LXD server configuration", err.Error())
 		return
+	}
+
+	for name, memberConfig := range memberConfigs {
+		if err := applyServerConfig(server.UseTarget(name), memberConfig, nil); err != nil {
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to update LXD server configuration on member %q", name), err.Error())
+			return
+		}
 	}
 
 	diags = r.SyncState(ctx, &resp.State, server, plan)
@@ -155,6 +225,11 @@ func (r ServerResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	server, err := r.provider.InstanceServer(remote, "", "")
 	if err != nil {
 		resp.Diagnostics.Append(errors.NewInstanceServerError(err))
+		return
+	}
+
+	if err := requireMetadataConfigExtension(server); err != nil {
+		resp.Diagnostics.AddError("Unsupported LXD server", err.Error())
 		return
 	}
 
@@ -183,50 +258,41 @@ func (r ServerResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	planConfig, diags := common.ToConfigMap(ctx, plan.Config)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	stateConfig, diags := common.ToConfigMap(ctx, state.Config)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	if err := validateServerConfigKeys(server, planConfig); err != nil {
-		resp.Diagnostics.AddError("Invalid server configuration", err.Error())
-		return
-	}
-
-	apiServer, etag, err := server.GetServer()
+	planGlobalConfig, planMemberConfigs, err := plan.ParseServerConfigs(ctx, server)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to retrieve LXD server configuration", err.Error())
+		resp.Diagnostics.AddError("Failed to parse server configuration", err.Error())
 		return
 	}
 
-	newConfig := maps.Clone(apiServer.Config)
-	for k, v := range planConfig {
-		newConfig[k] = v
-	}
-
-	// Keys that were tracked in state but removed from the plan are reset
-	// back to their default (empty) value. All other existing server
-	// configuration is left untouched.
-	for k := range stateConfig {
-		if _, ok := planConfig[k]; !ok {
-			newConfig[k] = ""
-		}
-	}
-
-	err = server.UpdateServer(api.ServerPut{Config: newConfig}, etag)
+	stateGlobalConfig, stateMemberConfigs, err := state.ParseServerConfigs(ctx, server)
 	if err != nil {
+		resp.Diagnostics.AddError("Failed to parse previous server configuration", err.Error())
+		return
+	}
+
+	if err := applyServerConfig(server, planGlobalConfig, stateGlobalConfig); err != nil {
 		resp.Diagnostics.AddError("Failed to update LXD server configuration", err.Error())
 		return
 	}
 
-	diags = r.SyncState(ctx, &resp.State, server, plan)
+	memberNames := make(map[string]bool, len(planMemberConfigs))
+	for name := range planMemberConfigs {
+		memberNames[name] = true
+	}
+
+	for name := range stateMemberConfigs {
+		memberNames[name] = true
+	}
+
+	for name := range memberNames {
+		err := applyServerConfig(server.UseTarget(name), planMemberConfigs[name], stateMemberConfigs[name])
+		if err != nil {
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to update LXD server configuration on member %q", name), err.Error())
+			return
+		}
+	}
+
+	diags := r.SyncState(ctx, &resp.State, server, plan)
 	resp.Diagnostics.Append(diags...)
 }
 
@@ -246,33 +312,27 @@ func (r ServerResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	stateConfig, diags := common.ToConfigMap(ctx, state.Config)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
+	if err := requireMetadataConfigExtension(server); err != nil {
+		resp.Diagnostics.AddError("Unsupported LXD server", err.Error())
 		return
 	}
 
-	if len(stateConfig) == 0 {
-		return
-	}
-
-	apiServer, etag, err := server.GetServer()
+	stateGlobalConfig, stateMemberConfigs, err := state.ParseServerConfigs(ctx, server)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to retrieve LXD server configuration", err.Error())
+		resp.Diagnostics.AddError("Failed to parse server configuration", err.Error())
 		return
 	}
 
-	// Reset only the keys that were managed by this resource back to their
-	// default (empty) value. All other existing server configuration is
-	// left untouched.
-	newConfig := maps.Clone(apiServer.Config)
-	for k := range stateConfig {
-		newConfig[k] = ""
-	}
-
-	err = server.UpdateServer(api.ServerPut{Config: newConfig}, etag)
-	if err != nil {
+	if err := applyServerConfig(server, nil, stateGlobalConfig); err != nil {
 		resp.Diagnostics.AddError("Failed to update LXD server configuration", err.Error())
+		return
+	}
+
+	for name, memberConfig := range stateMemberConfigs {
+		if err := applyServerConfig(server.UseTarget(name), nil, memberConfig); err != nil {
+			resp.Diagnostics.AddError(fmt.Sprintf("Failed to update LXD server configuration on member %q", name), err.Error())
+			return
+		}
 	}
 }
 
@@ -282,14 +342,20 @@ func (r ServerResource) ImportState(ctx context.Context, req resource.ImportStat
 
 // SyncState fetches the LXD server's current configuration and updates the
 // provided model, keeping only the keys that are tracked by the model's
-// "config" attribute. It then applies this updated model as the new state
-// in Terraform.
+// "config" and "member_overrides" attributes. It then applies this updated
+// model as the new state in Terraform.
 func (r ServerResource) SyncState(ctx context.Context, tfState *tfsdk.State, server lxd.InstanceServer, m ServerModel) diag.Diagnostics {
 	var respDiags diag.Diagnostics
 
 	apiServer, _, err := server.GetServer()
 	if err != nil {
 		respDiags.AddError("Failed to retrieve LXD server configuration", err.Error())
+		return respDiags
+	}
+
+	_, localKeys, err := serverConfigKeys(apiServer, server)
+	if err != nil {
+		respDiags.AddError("Failed to retrieve LXD server configuration metadata", err.Error())
 		return respDiags
 	}
 
@@ -302,8 +368,14 @@ func (r ServerResource) SyncState(ctx context.Context, tfState *tfsdk.State, ser
 	}
 
 	config := make(map[string]string, len(trackedConfig))
-	for k := range trackedConfig {
-		// A missing key means the value was reset to its default (empty).
+	for k, v := range trackedConfig {
+		if apiServer.Environment.ServerClustered && slices.Contains(localKeys, k) {
+			// Local defaults cannot be read back from a clustered server:
+			// each member's actual value is reflected in "members" instead.
+			config[k] = v
+			continue
+		}
+
 		config[k] = liveConfig[k]
 	}
 
@@ -313,7 +385,48 @@ func (r ServerResource) SyncState(ctx context.Context, tfState *tfsdk.State, ser
 		return respDiags
 	}
 
+	// Resolve the per-member configuration keys that are tracked, based on
+	// the model's "config" (local defaults) and "member_overrides".
+	_, trackedMemberConfigs, err := m.ParseServerConfigs(ctx, server)
+	if err != nil {
+		respDiags.AddError("Failed to parse server configuration", err.Error())
+		return respDiags
+	}
+
+	members := make(map[string]ServerMemberModel, len(trackedMemberConfigs))
+	for name, trackedMemberConfig := range trackedMemberConfigs {
+		memberServer := server.UseTarget(name)
+
+		memberAPIServer, _, err := memberServer.GetServer()
+		if err != nil {
+			respDiags.AddError(fmt.Sprintf("Failed to retrieve LXD server configuration for member %q", name), err.Error())
+			return respDiags
+		}
+
+		memberLiveConfig := serverConfigToStringMap(memberAPIServer.Config)
+
+		memberConfig := make(map[string]string, len(trackedMemberConfig))
+		for k := range trackedMemberConfig {
+			memberConfig[k] = memberLiveConfig[k]
+		}
+
+		memberConfigValue, diags := types.MapValueFrom(ctx, types.StringType, memberConfig)
+		respDiags.Append(diags...)
+		if respDiags.HasError() {
+			return respDiags
+		}
+
+		members[name] = ServerMemberModel{Config: memberConfigValue}
+	}
+
+	membersValue, diags := toServerMembersType(ctx, members)
+	respDiags.Append(diags...)
+	if respDiags.HasError() {
+		return respDiags
+	}
+
 	m.Config = configValue
+	m.Members = membersValue
 
 	return tfState.Set(ctx, &m)
 }
@@ -330,39 +443,112 @@ func requireMetadataConfigExtension(server lxd.InstanceServer) error {
 	return nil
 }
 
-// validateServerConfigKeys ensures that all keys in config are valid global
-// (cluster-wide) server configuration keys, as reported by the server's
-// metadata configuration. Member-specific (local) configuration keys are not
-// yet supported by this resource and are rejected.
-func validateServerConfigKeys(server lxd.InstanceServer, config map[string]string) error {
-	globalKeys, localKeys, err := serverConfigKeys(server)
+// ParseServerConfigs splits the model's "config" into global server
+// configuration and, for clustered servers, per-member local configuration.
+//
+// For non-clustered servers, the returned member configuration is nil and
+// "config" (which may contain both global and local-scope keys) should be
+// applied as-is; LXD assigns local-scope keys to the single server
+// automatically. "member_overrides" is not allowed in this case.
+//
+// For clustered servers, local-scope keys in "config" act as defaults applied
+// to every cluster member, unless overridden for a specific member via
+// "member_overrides". The returned global configuration contains only
+// global-scope keys.
+func (m ServerModel) ParseServerConfigs(ctx context.Context, server lxd.InstanceServer) (globalConfig map[string]string, memberConfigs map[string]map[string]string, err error) {
+	config, diags := common.ToConfigMap(ctx, m.Config)
+	err = errors.FromDiagnostics(diags)
 	if err != nil {
-		return err
+		return nil, nil, fmt.Errorf("Unable to convert server config to map: %v", err)
+	}
+
+	apiServer, _, err := server.GetServer()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	globalKeys, localKeys, err := serverConfigKeys(apiServer, server)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	for k := range config {
-		if slices.Contains(localKeys, k) {
-			return fmt.Errorf("Config key %q is a member-specific configuration key, which is not supported by this resource", k)
-		}
-
-		if !slices.Contains(globalKeys, k) {
-			return fmt.Errorf("Config key %q is not a valid global server configuration key", k)
+		if !slices.Contains(globalKeys, k) && !slices.Contains(localKeys, k) {
+			return nil, nil, fmt.Errorf("Config key %q is not a valid server configuration key", k)
 		}
 	}
 
-	return nil
+	hasMemberOverrides := len(m.MemberOverrides.Elements()) > 0
+
+	if !apiServer.Environment.ServerClustered {
+		if hasMemberOverrides {
+			return nil, nil, fmt.Errorf("Server configuration \"member_overrides\" is allowed only when LXD is clustered")
+		}
+
+		// Return early with the full config. LXD assigns global and
+		// local-scope keys appropriately on a non-clustered server.
+		return config, nil, nil
+	}
+
+	memberNames, err := server.GetClusterMemberNames()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Separate global and local (member-specific) configuration.
+	globalConfig = make(map[string]string)
+	localDefaults := make(map[string]string)
+	for k, v := range config {
+		if slices.Contains(localKeys, k) {
+			localDefaults[k] = v
+		} else {
+			globalConfig[k] = v
+		}
+	}
+
+	// Apply local defaults to all cluster members.
+	memberConfigs = make(map[string]map[string]string, len(memberNames))
+	for _, name := range memberNames {
+		memberConfigs[name] = maps.Clone(localDefaults)
+	}
+
+	// Apply member-specific config overrides.
+	overrides := map[string]ServerMemberModel{}
+	err = errors.FromDiagnostics(m.MemberOverrides.ElementsAs(ctx, &overrides, true))
+	if err != nil {
+		return nil, nil, fmt.Errorf("Unable to extract member-specific config overrides: %v", err)
+	}
+
+	for name, override := range overrides {
+		memberConfig, ok := memberConfigs[name]
+		if !ok {
+			return nil, nil, fmt.Errorf("Server configuration contains \"member_overrides\" for a non-existent cluster member %q", name)
+		}
+
+		overrideMap, diags := common.ToConfigMap(ctx, override.Config)
+		err = errors.FromDiagnostics(diags)
+		if err != nil {
+			return nil, nil, fmt.Errorf("Unable to convert member-specific config override to map: %v", err)
+		}
+
+		for k := range overrideMap {
+			if !slices.Contains(localKeys, k) {
+				return nil, nil, fmt.Errorf("Invalid config key %q for server member %q: only member-specific configuration keys are allowed in \"member_overrides\"", k, name)
+			}
+		}
+
+		maps.Copy(memberConfig, overrideMap)
+		memberConfigs[name] = memberConfig
+	}
+
+	return globalConfig, memberConfigs, nil
 }
 
 // serverConfigKeys returns the list of global (cluster-wide) and
 // member-specific (local) server configuration keys, derived from the LXD
 // server's metadata configuration. Read-only "volatile." keys are excluded
 // from both lists.
-func serverConfigKeys(server lxd.InstanceServer) (globalKeys []string, localKeys []string, err error) {
-	apiServer, _, err := server.GetServer()
-	if err != nil {
-		return nil, nil, err
-	}
-
+func serverConfigKeys(apiServer *api.Server, server lxd.InstanceServer) (globalKeys []string, localKeys []string, err error) {
 	meta, err := common.ServerMetadataConfiguration(apiServer.Environment.ServerVersion, server)
 	if err != nil {
 		return nil, nil, err
@@ -393,6 +579,35 @@ func serverConfigKeys(server lxd.InstanceServer) (globalKeys []string, localKeys
 	return globalKeys, localKeys, nil
 }
 
+// applyServerConfig overlays planConfig on top of the server's current
+// configuration, resets any keys present in stateConfig but absent from
+// planConfig back to their default (empty) value, and applies the result.
+// All other existing server configuration is left untouched. If both
+// planConfig and stateConfig are empty, no request is made.
+func applyServerConfig(server lxd.InstanceServer, planConfig map[string]string, stateConfig map[string]string) error {
+	if len(planConfig) == 0 && len(stateConfig) == 0 {
+		return nil
+	}
+
+	apiServer, etag, err := server.GetServer()
+	if err != nil {
+		return err
+	}
+
+	newConfig := maps.Clone(apiServer.Config)
+	for k, v := range planConfig {
+		newConfig[k] = v
+	}
+
+	for k := range stateConfig {
+		if _, ok := planConfig[k]; !ok {
+			newConfig[k] = ""
+		}
+	}
+
+	return server.UpdateServer(api.ServerPut{Config: newConfig}, etag)
+}
+
 // serverConfigToStringMap converts a LXD server configuration map into a
 // map[string]string. Non-string values are not expected, but are converted
 // using their default string representation to avoid losing data.
@@ -409,4 +624,37 @@ func serverConfigToStringMap(config map[string]any) map[string]string {
 	}
 
 	return result
+}
+
+// toServerMembersType converts a map of per-member configuration into the
+// types.Map representation used by the "members" attribute.
+func toServerMembersType(ctx context.Context, members map[string]ServerMemberModel) (types.Map, diag.Diagnostics) {
+	memberObjType := types.ObjectType{AttrTypes: map[string]attr.Type{
+		"config": types.MapType{ElemType: types.StringType},
+	}}
+
+	if members == nil {
+		members = map[string]ServerMemberModel{}
+	}
+
+	return types.MapValueFrom(ctx, memberObjType, members)
+}
+
+// toServerMembersType converts a map of per-member configuration (as plain
+// string maps) into the types.Map representation used by the "members"
+// attribute.
+func toServerMembersTypeFromConfigs(ctx context.Context, memberConfigs map[string]map[string]string) (types.Map, diag.Diagnostics) {
+	members := make(map[string]ServerMemberModel, len(memberConfigs))
+	for name, config := range memberConfigs {
+		configValue, diags := types.MapValueFrom(ctx, types.StringType, config)
+		if diags.HasError() {
+			return types.MapNull(types.ObjectType{AttrTypes: map[string]attr.Type{
+				"config": types.MapType{ElemType: types.StringType},
+			}}), diags
+		}
+
+		members[name] = ServerMemberModel{Config: configValue}
+	}
+
+	return toServerMembersType(ctx, members)
 }
